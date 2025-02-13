@@ -71,13 +71,12 @@ export default function KanbanBoard() {
         saveTasks(updatedTasks);
     };
 
-    const addTask = (title: string) => {
-        if (!title.trim()) return;
-        setTasks((prev) => {
-            const updatedTasks = { ...prev, todo: [title, ...prev.todo] };
-            saveTasks(updatedTasks);
-            return updatedTasks;
-        });
+    const addTask = async (task: string) => {
+        const updatedTasks = { ...tasks };
+        updatedTasks.todo = [task, ...updatedTasks.todo]; // Add new task at the top
+
+        setTasks(updatedTasks);
+        await saveTasks(updatedTasks);
     };
 
     const handleDoubleClick = (columnId: keyof Tasks, task: string) => {
@@ -108,12 +107,17 @@ export default function KanbanBoard() {
         }
     };
 
-    const saveTasks = (updatedTasks: Tasks) => {
-        fetch(API_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(updatedTasks),
-        }).catch((err) => console.error("Failed to save tasks:", err));
+    const saveTasks = async (updatedTasks: Tasks) => {
+        try {
+            const response = await fetch(API_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(updatedTasks),
+            });
+            if (!response.ok) throw new Error("Failed to save tasks");
+        } catch (err) {
+            console.error("Failed to save tasks:", err);
+        }
     };
 
     return (
@@ -142,8 +146,7 @@ export default function KanbanBoard() {
                                             {title}
                                         </h2>
                                         <div className="space-y-3 flex-grow overflow-auto">
-                                            {id === "todo" && <AddNewTask onAdd={addTask} />}
-                                            
+                                            {id === "todo" && <AddNewTask onAddTask={addTask} />}
                                             {tasks[id as keyof Tasks]?.length > 0 ? (
                                                 tasks[id as keyof Tasks].map((task, index) => (
                                                     <Draggable key={task} draggableId={task} index={index}>
