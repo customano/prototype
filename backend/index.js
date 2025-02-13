@@ -13,8 +13,8 @@ const MONGO_URI = process.env.MONGO_URI;
 
 // Connect to MongoDB Atlas
 mongoose.connect(MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
+    dbName: "customatoDB", // Ensure database name is set
+    serverSelectionTimeoutMS: 10000, // Increase timeout
 })
 .then(() => console.log("✅ MongoDB Connected Successfully"))
 .catch((err) => console.error("❌ MongoDB Connection Error:", err));
@@ -35,7 +35,7 @@ app.get("/tasks", async (req, res) => {
         tasks.forEach((task) => formattedTasks[task.status].push(task.title));
         res.json(formattedTasks);
     } catch (err) {
-        res.status(500).json({ error: "Failed to fetch tasks" });
+        res.status(500).json({ error: "Failed to fetch tasks", details: err.message });
     }
 });
 
@@ -47,7 +47,7 @@ app.post("/tasks", async (req, res) => {
         await newTask.save();
         res.json(newTask);
     } catch (err) {
-        res.status(500).json({ error: "Failed to create task" });
+        res.status(500).json({ error: "Failed to create task", details: err.message });
     }
 });
 
@@ -58,7 +58,7 @@ app.put("/tasks/:title", async (req, res) => {
         await Task.findOneAndUpdate({ title: req.params.title }, { status });
         res.json({ message: "Task updated" });
     } catch (err) {
-        res.status(500).json({ error: "Failed to update task" });
+        res.status(500).json({ error: "Failed to update task", details: err.message });
     }
 });
 
@@ -68,7 +68,19 @@ app.delete("/tasks/:title", async (req, res) => {
         await Task.findOneAndDelete({ title: req.params.title });
         res.json({ message: "Task deleted" });
     } catch (err) {
-        res.status(500).json({ error: "Failed to delete task" });
+        res.status(500).json({ error: "Failed to delete task", details: err.message });
+    }
+});
+
+// DEBUG: Test MongoDB Connection
+app.get("/debug/db", async (req, res) => {
+    try {
+        await mongoose.connect(MONGO_URI, {
+            serverSelectionTimeoutMS: 10000, // Increase timeout
+        });
+        res.json({ message: "✅ MongoDB Connected Successfully" });
+    } catch (err) {
+        res.status(500).json({ error: "❌ MongoDB Connection Error", details: err.message });
     }
 });
 
