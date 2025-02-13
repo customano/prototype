@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+import AddNewTask from "./AddNewTask";
 
 const API_URL = "https://customato-prototype-backend.vercel.app/tasks";
 
@@ -70,6 +71,15 @@ export default function KanbanBoard() {
         saveTasks(updatedTasks);
     };
 
+    const addTask = (title: string) => {
+        if (!title.trim()) return;
+        setTasks((prev) => {
+            const updatedTasks = { ...prev, todo: [title, ...prev.todo] };
+            saveTasks(updatedTasks);
+            return updatedTasks;
+        });
+    };
+
     const handleDoubleClick = (columnId: keyof Tasks, task: string) => {
         setIsEditing({ ...isEditing, [`${columnId}-${task}`]: task });
     };
@@ -132,6 +142,8 @@ export default function KanbanBoard() {
                                             {title}
                                         </h2>
                                         <div className="space-y-3 flex-grow overflow-auto">
+                                            {id === "todo" && <AddNewTask onAdd={addTask} />}
+                                            
                                             {tasks[id as keyof Tasks]?.length > 0 ? (
                                                 tasks[id as keyof Tasks].map((task, index) => (
                                                     <Draggable key={task} draggableId={task} index={index}>
