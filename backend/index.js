@@ -1,89 +1,74 @@
-import express from "express";
-import mongoose from "mongoose";
-import cors from "cors";
-import dotenv from "dotenv";
-
-dotenv.config();
+require("dotenv").config();
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
 
 const app = express();
-app.use(express.json());
+const PORT = process.env.PORT || 3001;
+
+// Debug: Log the MongoDB URI to confirm it's loaded
+console.log("MONGO_URI from ENV:", process.env.MONGO_URI);
+
+mongoose
+  .connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 10000 })
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch((err) => {
+    console.error("❌ MongoDB Connection Error:", err);
+  });
+
 app.use(cors());
+app.use(express.json());
 
-const MONGO_URI = process.env.MONGO_URI;
-
-// Connect to MongoDB Atlas
-mongoose.connect(MONGO_URI, {
-    dbName: "customatoDB", // Ensure database name is set
-    serverSelectionTimeoutMS: 10000, // Increase timeout
-})
-.then(() => console.log("✅ MongoDB Connected Successfully"))
-.catch((err) => console.error("❌ MongoDB Connection Error:", err));
-
-// Define Task Schema
+// Task Schema
 const taskSchema = new mongoose.Schema({
-    title: String,
-    status: { type: String, enum: ["todo", "inProgress", "done", "hold"], default: "todo" },
+  title: { type: String, required: true },
+  status: { type: String, enum: ["todo", "inProgress", "done", "hold"], required: true },
 });
 
 const Task = mongoose.model("Task", taskSchema);
 
-// GET: Fetch all tasks
-app.get("/tasks", async (req, res) => {
-    try {
-        const tasks = await Task.find();
-        const formattedTasks = { todo: [], inProgress: [], done: [], hold: [] };
-        tasks.forEach((task) => formattedTasks[task.status].push(task.title));
-        res.json(formattedTasks);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch tasks", details: err.message });
-    }
-});
-
-// POST: Add a new task
-app.post("/tasks", async (req, res) => {
-    try {
-        const { title, status } = req.body;
-        const newTask = new Task({ title, status: status || "todo" });
-        await newTask.save();
-        res.json(newTask);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to create task", details: err.message });
-    }
-});
-
-// PUT: Update a task's status
-app.put("/tasks/:title", async (req, res) => {
-    try {
-        const { status } = req.body;
-        await Task.findOneAndUpdate({ title: req.params.title }, { status });
-        res.json({ message: "Task updated" });
-    } catch (err) {
-        res.status(500).json({ error: "Failed to update task", details: err.message });
-    }
-});
-
-// DELETE: Remove a task
-app.delete("/tasks/:title", async (req, res) => {
-    try {
-        await Task.findOneAndDelete({ title: req.params.title });
-        res.json({ message: "Task deleted" });
-    } catch (err) {
-        res.status(500).json({ error: "Failed to delete task", details: err.message });
-    }
-});
-
-// DEBUG: Test MongoDB Connection
+// Debug Route for Checking DB Connection
 app.get("/debug/db", async (req, res) => {
-    try {
-        await mongoose.connect(MONGO_URI, {
-            serverSelectionTimeoutMS: 10000, // Increase timeout
-        });
-        res.json({ message: "✅ MongoDB Connected Successfully" });
-    } catch (err) {
-        res.status(500).json({ error: "❌ MongoDB Connection Error", details: err.message });
-    }
+  try {
+    await mongoose.connection.db.admin().ping();
+    res.json({ message: "✅ MongoDB Connected Successfully" });
+  } catch (error) {
+    res.status(500).json({ error: "❌ MongoDB Connection Failed", details: error.message });
+  }
+});
+
+// Fetch Tasks
+app.get("/tasks", async (req, res) => {
+  try {
+    const tasks = await Task.find({});
+    const groupedTasks = {
+      todo: tasks.filter((task) => task.status === "todo").map((t) => t.title),
+      inProgress: tasks.filter((task) => task.status === "inProgress").map((t) => t.title),
+      done: tasks.filter((task) => task.status === "done").map((t) => t.title),
+      hold: tasks.filter((task) => task.status === "hold").map((t) => t.title),
+    };
+    res.json(groupedTasks);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch tasks", details: error.message });
+  }
+});
+
+// Add a New Task
+app.post("/tasks", async (req, res) => {
+  try {
+    const { title, status } = req.body;
+    if (!title || !status) return res.status(400).json({ error: "Title and status are required" });
+
+    const newTask = new Task({ title, status });
+    await newTask.save();
+
+    res.status(201).json({ message: "Task added successfully", task: newTask });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to add task", details: error.message });
+  }
 });
 
 // Start Server
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
