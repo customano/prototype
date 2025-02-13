@@ -26,25 +26,47 @@ export default function KanbanBoard() {
     const [isLoading, setIsLoading] = useState(true);
     const [hasError, setHasError] = useState(false);
 
-    useEffect(() => {
-        fetch(API_URL)
-            .then((res) => res.json())
-            .then((data) => {
-                console.log("Fetched tasks:", data);
-                if (data && typeof data === "object") {
-                    setTasks({ ...DEFAULT_TASKS, ...data });
-                } else {
-                    console.error("Invalid API response:", data);
-                    setTasks(DEFAULT_TASKS);
-                }
-            })
-            .catch((err) => {
-                console.error("Failed to fetch tasks:", err);
+    const fetchTasks = async () => {
+        try {
+            const response = await fetch(API_URL);
+            const data = await response.json();
+            console.log("📥 Fetched tasks:", data);
+            if (data && typeof data === "object") {
+                setTasks({ ...DEFAULT_TASKS, ...data });
+            } else {
+                console.error("❌ Invalid API response:", data);
                 setTasks(DEFAULT_TASKS);
-                setHasError(true);
-            })
-            .finally(() => setIsLoading(false));
+            }
+        } catch (error) {
+            console.error("❌ Failed to fetch tasks:", error);
+            setTasks(DEFAULT_TASKS);
+            setHasError(true);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchTasks();
     }, []);
+
+    const saveTasks = async (updatedTasks: Tasks) => {
+        console.log("📤 Saving tasks:", updatedTasks);
+        try {
+            const response = await fetch(API_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(updatedTasks),
+            });
+            if (!response.ok) {
+                console.error("❌ Failed to save tasks", await response.json());
+            } else {
+                console.log("✅ Tasks saved successfully");
+            }
+        } catch (err) {
+            console.error("❌ Failed to save tasks:", err);
+        }
+    };
 
     const onDragEnd = (result: DropResult) => {
         const { source, destination } = result;
@@ -54,7 +76,7 @@ export default function KanbanBoard() {
         const destColumn = destination.droppableId as keyof Tasks;
 
         if (!tasks[sourceColumn] || !tasks[destColumn]) {
-            console.error("Invalid drag source or destination:", sourceColumn, destColumn);
+            console.error("❌ Invalid drag source or destination:", sourceColumn, destColumn);
             return;
         }
 
@@ -72,51 +94,22 @@ export default function KanbanBoard() {
     };
 
     const addTask = async (task: string) => {
-        const updatedTasks = { ...tasks };
-        updatedTasks.todo = [task, ...updatedTasks.todo]; // Add new task at the top
-
-        setTasks(updatedTasks);
-        await saveTasks(updatedTasks);
-    };
-
-    const handleDoubleClick = (columnId: keyof Tasks, task: string) => {
-        setIsEditing({ ...isEditing, [`${columnId}-${task}`]: task });
-    };
-
-    const handleChange = (columnId: keyof Tasks, oldTask: string, newTask: string) => {
-        const updatedTasks = { ...tasks };
-        const taskIndex = updatedTasks[columnId].indexOf(oldTask);
-        if (taskIndex !== -1) {
-            updatedTasks[columnId][taskIndex] = newTask;
-            setTasks(updatedTasks);
-            saveTasks(updatedTasks);
-        }
-        setIsEditing({ ...isEditing, [`${columnId}-${oldTask}`]: null });
-    };
-
-    const handleBlur = (columnId: keyof Tasks, oldTask: string, newTask: string) => {
-        if (newTask.trim() === "") return;
-        handleChange(columnId, oldTask, newTask);
-    };
-
-    const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>, columnId: keyof Tasks, oldTask: string) => {
-        if (event.key === "Enter") {
-            handleChange(columnId, oldTask, event.currentTarget.value);
-        } else if (event.key === "Escape") {
-            setIsEditing({ ...isEditing, [`${columnId}-${oldTask}`]: null });
-        }
-    };
-
-    const saveTasks = async (updatedTasks: Tasks) => {
+        console.log("➕ Adding new task:", task);
         try {
             const response = await fetch(API_URL, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(updatedTasks),
+                body: JSON.stringify({ title: task, status: "todo" }),
             });
-            if (!response.ok) throw new Error("Failed to save tasks");
-        } catch (err) {
-            console.error("Failed to save tasks:", err);
+
+            if (response.ok) {
+                console.log("✅ Task added successfully");
+                fetchTasks(); // Refresh task list after adding
+            } else {
+                console.error("❌ Failed to add task", await response.json());
+            }
+        } catch (error) {
+            console.error("❌ Error adding task:", error);
         }
     };
 
@@ -146,7 +139,9 @@ export default function KanbanBoard() {
                                             {title}
                                         </h2>
                                         <div className="space-y-3 flex-grow overflow-auto">
-                                            {id === "todo" && <AddNewTask onAddTask={addTask} />}
+                                            {/* Add New Task Component at the top */}
+                                            {id === "todo" && <AddNewTask onTaskAdded={fetchTasks} />}
+
                                             {tasks[id as keyof Tasks]?.length > 0 ? (
                                                 tasks[id as keyof Tasks].map((task, index) => (
                                                     <Draggable key={task} draggableId={task} index={index}>
@@ -156,20 +151,8 @@ export default function KanbanBoard() {
                                                                 {...provided.draggableProps}
                                                                 {...provided.dragHandleProps}
                                                                 className="bg-blue-100 p-3 rounded-md shadow cursor-pointer text-center border border-blue-300"
-                                                                onDoubleClick={() => handleDoubleClick(id as keyof Tasks, task)}
                                                             >
-                                                                {isEditing[`${id}-${task}`] !== undefined ? (
-                                                                    <input
-                                                                        type="text"
-                                                                        className="w-full p-1 rounded border border-blue-300"
-                                                                        defaultValue={task}
-                                                                        onBlur={(e) => handleBlur(id as keyof Tasks, task, e.target.value)}
-                                                                        onKeyDown={(e) => handleKeyDown(e, id as keyof Tasks, task)}
-                                                                        autoFocus
-                                                                    />
-                                                                ) : (
-                                                                    task
-                                                                )}
+                                                                {task}
                                                             </div>
                                                         )}
                                                     </Draggable>
