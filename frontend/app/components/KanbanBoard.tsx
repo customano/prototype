@@ -3,34 +3,60 @@
 import { useState, useEffect } from "react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 
-const API_URL = "https://customato-prototype-my38.vercel.app/tasks";
+const API_URL = "https://customato-prototype-backend.vercel.app/tasks";
 
 interface Tasks {
-    [key: string]: string[];
+    todo: string[];
+    inProgress: string[];
+    done: string[];
+    hold: string[];
 }
 
-export default function KanbanBoard() {
-    const [tasks, setTasks] = useState<Tasks>({ todo: [], inProgress: [], done: [] });
-    const [editingTask, setEditingTask] = useState<{ column: string; index: number } | null>(null);
-    const [taskText, setTaskText] = useState<string>("");
+const DEFAULT_TASKS: Tasks = {
+    todo: [],
+    inProgress: [],
+    done: [],
+    hold: [],
+};
 
-    // Fetch tasks from backend on load
+export default function KanbanBoard() {
+    const [tasks, setTasks] = useState<Tasks>(DEFAULT_TASKS);
+    const [isEditing, setIsEditing] = useState<{ [key: string]: string | null }>({});
+    const [isLoading, setIsLoading] = useState(true);
+    const [hasError, setHasError] = useState(false);
+
     useEffect(() => {
         fetch(API_URL)
             .then((res) => res.json())
-            .then((data) => setTasks(data))
-            .catch((err) => console.error("Failed to fetch tasks:", err));
+            .then((data) => {
+                console.log("Fetched tasks:", data);
+                if (data && typeof data === "object") {
+                    setTasks({ ...DEFAULT_TASKS, ...data });
+                } else {
+                    console.error("Invalid API response:", data);
+                    setTasks(DEFAULT_TASKS);
+                }
+            })
+            .catch((err) => {
+                console.error("Failed to fetch tasks:", err);
+                setTasks(DEFAULT_TASKS);
+                setHasError(true);
+            })
+            .finally(() => setIsLoading(false));
     }, []);
 
-    // Handle Drag & Drop
     const onDragEnd = (result: DropResult) => {
         const { source, destination } = result;
         if (!destination) return;
 
-        const sourceColumn = source.droppableId;
-        const destColumn = destination.droppableId;
+        const sourceColumn = source.droppableId as keyof Tasks;
+        const destColumn = destination.droppableId as keyof Tasks;
 
-        // Clone tasks to avoid mutating state directly
+        if (!tasks[sourceColumn] || !tasks[destColumn]) {
+            console.error("Invalid drag source or destination:", sourceColumn, destColumn);
+            return;
+        }
+
         const updatedTasks = { ...tasks };
         const movedTasks = [...updatedTasks[sourceColumn]];
         const [movedTask] = movedTasks.splice(source.index, 1);
@@ -41,98 +67,110 @@ export default function KanbanBoard() {
         }
 
         setTasks(updatedTasks);
-
-        // Save updated tasks to backend
-        fetch(API_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(updatedTasks)
-        }).catch((err) => console.error("Failed to save tasks:", err));
+        saveTasks(updatedTasks);
     };
 
-    // Handle task editing
-    const startEditing = (column: string, index: number, text: string) => {
-        setEditingTask({ column, index });
-        setTaskText(text);
+    const handleDoubleClick = (columnId: keyof Tasks, task: string) => {
+        setIsEditing({ ...isEditing, [`${columnId}-${task}`]: task });
     };
 
-    const handleEditChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setTaskText(e.target.value);
-    };
-
-    const finishEditing = () => {
-        if (editingTask) {
-            const { column, index } = editingTask;
-            const updatedTasks = { ...tasks };
-            updatedTasks[column][index] = taskText;
+    const handleChange = (columnId: keyof Tasks, oldTask: string, newTask: string) => {
+        const updatedTasks = { ...tasks };
+        const taskIndex = updatedTasks[columnId].indexOf(oldTask);
+        if (taskIndex !== -1) {
+            updatedTasks[columnId][taskIndex] = newTask;
             setTasks(updatedTasks);
+            saveTasks(updatedTasks);
+        }
+        setIsEditing({ ...isEditing, [`${columnId}-${oldTask}`]: null });
+    };
 
-            // Save updated task to backend
-            fetch(API_URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(updatedTasks)
-            }).catch((err) => console.error("Failed to update task:", err));
+    const handleBlur = (columnId: keyof Tasks, oldTask: string, newTask: string) => {
+        if (newTask.trim() === "") return;
+        handleChange(columnId, oldTask, newTask);
+    };
 
-            setEditingTask(null);
+    const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>, columnId: keyof Tasks, oldTask: string) => {
+        if (event.key === "Enter") {
+            handleChange(columnId, oldTask, event.currentTarget.value);
+        } else if (event.key === "Escape") {
+            setIsEditing({ ...isEditing, [`${columnId}-${oldTask}`]: null });
         }
     };
 
+    const saveTasks = (updatedTasks: Tasks) => {
+        fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(updatedTasks),
+        }).catch((err) => console.error("Failed to save tasks:", err));
+    };
+
     return (
-        <div className="flex flex-col items-center p-8 bg-gray-100 min-h-screen">
-            <div className="flex justify-center space-x-6 w-full max-w-5xl">
-                <DragDropContext onDragEnd={onDragEnd}>
-                    {Object.entries(tasks).map(([columnId, taskList]) => (
-                        <Droppable key={columnId} droppableId={columnId}>
-                            {(provided) => (
-                                <div
-                                    ref={provided.innerRef}
-                                    {...provided.droppableProps}
-                                    className="w-1/3 bg-white p-4 rounded-lg shadow-md min-h-[400px] flex flex-col"
-                                >
-                                    <h2 className="text-lg font-semibold mb-4 text-center capitalize bg-blue-500 text-white p-2 rounded-md">
-                                        {columnId}
-                                    </h2>
-                                    <div className="space-y-3 flex-grow overflow-auto">
-                                        {taskList.length > 0 ? (
-                                            taskList.map((task, index) => (
-                                                <Draggable key={task} draggableId={task} index={index}>
-                                                    {(provided) => (
-                                                        <div
-                                                            ref={provided.innerRef}
-                                                            {...provided.draggableProps}
-                                                            {...provided.dragHandleProps}
-                                                            className="bg-blue-100 p-3 rounded-md shadow cursor-pointer text-center border border-blue-300"
-                                                            onDoubleClick={() => startEditing(columnId, index, task)}
-                                                        >
-                                                            {editingTask && editingTask.column === columnId && editingTask.index === index ? (
-                                                                <input
-                                                                    type="text"
-                                                                    value={taskText}
-                                                                    onChange={handleEditChange}
-                                                                    onBlur={finishEditing}
-                                                                    onKeyDown={(e) => e.key === "Enter" && finishEditing()}
-                                                                    autoFocus
-                                                                    className="w-full p-2 border border-blue-500 rounded-md"
-                                                                />
-                                                            ) : (
-                                                                task
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </Draggable>
-                                            ))
-                                        ) : (
-                                            <p className="text-gray-500 text-center">No tasks</p>
-                                        )}
-                                        {provided.placeholder}
+        <div className="flex items-center justify-center h-screen w-screen bg-gray-100 overflow-hidden">
+            {isLoading ? (
+                <p className="text-center text-lg text-gray-600">Loading...</p>
+            ) : hasError ? (
+                <p className="text-center text-lg text-red-500">Failed to load tasks.</p>
+            ) : (
+                <div className="flex w-full h-[80%] px-[3%] space-x-[2%]">
+                    <DragDropContext onDragEnd={onDragEnd}>
+                        {[
+                            { id: "todo", title: "TODO", color: "bg-gray-500" },
+                            { id: "inProgress", title: "WIP", color: "bg-blue-500" },
+                            { id: "done", title: "DONE", color: "bg-green-500" },
+                            { id: "hold", title: "HOLD", color: "bg-red-500" },
+                        ].map(({ id, title, color }) => (
+                            <Droppable key={id} droppableId={id}>
+                                {(provided) => (
+                                    <div
+                                        ref={provided.innerRef}
+                                        {...provided.droppableProps}
+                                        className="w-[22%] bg-white p-4 rounded-lg shadow-md flex flex-col overflow-hidden"
+                                    >
+                                        <h2 className={`text-lg font-semibold mb-4 text-center text-white p-2 rounded-md ${color}`}>
+                                            {title}
+                                        </h2>
+                                        <div className="space-y-3 flex-grow overflow-auto">
+                                            {tasks[id as keyof Tasks]?.length > 0 ? (
+                                                tasks[id as keyof Tasks].map((task, index) => (
+                                                    <Draggable key={task} draggableId={task} index={index}>
+                                                        {(provided) => (
+                                                            <div
+                                                                ref={provided.innerRef}
+                                                                {...provided.draggableProps}
+                                                                {...provided.dragHandleProps}
+                                                                className="bg-blue-100 p-3 rounded-md shadow cursor-pointer text-center border border-blue-300"
+                                                                onDoubleClick={() => handleDoubleClick(id as keyof Tasks, task)}
+                                                            >
+                                                                {isEditing[`${id}-${task}`] !== undefined ? (
+                                                                    <input
+                                                                        type="text"
+                                                                        className="w-full p-1 rounded border border-blue-300"
+                                                                        defaultValue={task}
+                                                                        onBlur={(e) => handleBlur(id as keyof Tasks, task, e.target.value)}
+                                                                        onKeyDown={(e) => handleKeyDown(e, id as keyof Tasks, task)}
+                                                                        autoFocus
+                                                                    />
+                                                                ) : (
+                                                                    task
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </Draggable>
+                                                ))
+                                            ) : (
+                                                <p className="text-gray-500 text-center">No tasks</p>
+                                            )}
+                                            {provided.placeholder}
+                                        </div>
                                     </div>
-                                </div>
-                            )}
-                        </Droppable>
-                    ))}
-                </DragDropContext>
-            </div>
+                                )}
+                            </Droppable>
+                        ))}
+                    </DragDropContext>
+                </div>
+            )}
         </div>
     );
 }
