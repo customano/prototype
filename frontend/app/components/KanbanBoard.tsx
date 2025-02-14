@@ -34,7 +34,7 @@ export default function KanbanBoard() {
             if (data && typeof data === "object") {
                 // Sort tasks by position to maintain order
                 Object.keys(data).forEach(key => {
-                    data[key].sort((a, b) => a.position - b.position);
+                    data[key].sort((a: Task, b: Task) => a.position - b.position);
                 });
                 setTasks(data);
             } else {
